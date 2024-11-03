@@ -45,6 +45,8 @@ This approach enables distributed simulation and processing of the ICS environme
 
 ## Architecture
 
+link: https://drive.google.com/file/d/1EEVOv_E4yaRjWjhDDGOVO2oSBd1o-ti3/view?usp=sharing
+
 ![image](assets/Architecture.png "System Architecture")
 
 
