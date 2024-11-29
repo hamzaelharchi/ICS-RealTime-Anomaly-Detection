@@ -22,6 +22,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on: 
       - zookeeper
+    restart: on-failure
     networks: 
       - elk
 
@@ -84,6 +85,24 @@ services:
     ports:
       - "5000:5000"
       - "9600:9600"
+    networks:
+      - elk
+
+
+
+  pyspark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pyspark
+    hostname: pyspark
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    ports:
+      - "8888:8888"
+    depends_on:
+      - kafka
+    #command: start-notebook.sh --NotebookApp.token='
     networks:
       - elk
   
