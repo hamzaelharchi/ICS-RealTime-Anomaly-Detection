@@ -5,13 +5,14 @@ from kafka.admin import KafkaAdminClient, NewTopic
 import json  # For handling JSON serialization
 
 # Initialize Kafka Admin Client
-admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+admin_client = KafkaAdminClient(bootstrap_servers="kafka:29092")
 existing_topics = admin_client.list_topics()
 print(f"Existing topics: {existing_topics}")
 
+
 # Create a Kafka producer
 producer = KafkaProducer(
-    bootstrap_servers="localhost:9092",
+    bootstrap_servers="kafka:29092",
     key_serializer=lambda k: k.encode('utf-8'),
     value_serializer=lambda v: v.encode('utf-8')  # Serialize messages as UTF-8 encoded strings
 )
@@ -24,7 +25,7 @@ if TOPIC_NAME not in existing_topics:
     admin_client.create_topics(new_topics=topic_list, validate_only=False)
 
 # Read CSV into a pandas DataFrame
-df = pd.read_csv('./Attack.csv')  # Replace 'Normal.csv' with your actual CSV file path
+df = pd.read_csv('./work/Attack.csv')  # Replace 'Normal.csv' with your actual CSV file path
 
 # Initialize variables for batching
 batch_size = 10
