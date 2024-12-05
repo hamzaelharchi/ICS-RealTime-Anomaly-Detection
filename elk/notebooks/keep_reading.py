@@ -3,7 +3,38 @@ from pyspark.sql.session import SparkSession
 from pyspark.sql.functions import col
 import json
 import pandas as pd 
-from tensorflow.keras.models import load_model
+import onnxruntime as ort
+import numpy as np
+
+#from tensorflow.keras.models import load_model
+
+##################################
+
+
+# Example: Mocking `splits` for demonstration
+# Replace this with your actual data loading/preparation
+splits = [[np.random.rand(10, 69) for _ in range(10)] for _ in range(10)]  # Mock data
+
+# Load ONNX model
+print("#" * 30)
+ort_session = ort.InferenceSession("./model.onnx")
+
+# Get model input details
+input_details = ort_session.get_inputs()
+input_name = input_details[0].name
+
+# Extract the input data
+window_with_batch = np.expand_dims(splits[9][0], axis=0)  # Shape: (1, 10, 69)
+
+# Ensure the correct data type
+window_with_batch = window_with_batch.astype(np.float32)
+
+# Perform inference
+outputs = ort_session.run(None, {input_name: window_with_batch})
+print("Model output:", outputs)
+print("#" * 30)
+
+############################
 
 # Initialize Spark
 sc = SparkContext('local')
@@ -30,7 +61,7 @@ df1 = df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
 # Global buffer to accumulate rows
 global_buffer = []
 #Loading the model
-# autoencoder = load_model("withBatchNorm2_afterSplit_5.h5") 
+#autoencoder = load_model("withBatchNorm2_afterSplit_5.h5") 
 
 
 def process_batch(batch_df, batch_id):
@@ -65,7 +96,7 @@ def process_batch(batch_df, batch_id):
             
             # Log or handle the output
             print("Processed batch with autoencoder. Output:")
-            print(autoencoder_output)
+            #print(autoencoder_output)
 
 # Write stream using foreachBatch
 query = df1 \
