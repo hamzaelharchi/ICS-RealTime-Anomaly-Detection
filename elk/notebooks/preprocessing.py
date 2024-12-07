@@ -1,93 +1,58 @@
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-import pickle
 import pandas as pd
-import numpy as np
-import pandas as pd
-import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 import pickle
+def dataEngineering(filepath, actuators_NAMES):
+    # Load data
+    normal_data = pd.read_csv(filepath)
+    normal_data.set_index('Timestamp', inplace=True)
 
-def load_data(path):
-    try:
-        return pd.read_csv(path)
-    except FileNotFoundError:
-        print(f"File not found at {path}")
-    except pd.errors.EmptyDataError:
-        print(f"No data found in {path}")
-        return None
+    # Remove the last column
+    normal_data = normal_data.iloc[:, :-1]
 
-def preprocessing(df):
-    constant_columns = ['P202', 'P401', 'P404', 'P502', 'P601', 'P603','Normal/Attack']
-    if set(constant_columns).issubset(df.columns):
-        df = df.drop(constant_columns, axis=1)
+    to_drop = ['P402' ,'P203','FIT501','FIT504','P501' ,'FIT502','AIT502' ,'FIT201' ,'MV101','PIT501','PIT503' ,'AIT504' ,'MV201' ,'MV302' ,'FIT503','P302' ,'FIT301' ,'UV401'] 
+
+            
+    remained_cols= [i for i in normal_data.columns if i not in to_drop]
     
-    # Convert Timestamp to datetime
-    if 'Timestamp' in df.columns:
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], dayfirst=True, errors='coerce')
+    # Drop highly correlated features
+    normal_data.drop(columns=to_drop, inplace=True)
+
+    # Filter actuator names that are still in the dataset
+    actuators_NAMES = [col for col in actuators_NAMES if col in normal_data.columns]
+
+    # Separate sensors and actuators
+    sensors = normal_data.drop(columns=actuators_NAMES)
     
-    # Identify missing values
-    if df.isnull().sum().any():
-        print("Missing values detected.")
-        df.dropna(inplace=True)
-    
-    # Categorize columns
-    dis_col, num_col = [], []
-    for f in df.columns:
-        if df[f].nunique() > 10:
-            num_col.append(f)
+    sens_cols = sensors.columns
+    print(sens_cols)
+    actuators = normal_data[actuators_NAMES]
+    scaler = MinMaxScaler()
+    # Fit and transform the sensors data using the scaler
+    scaler.fit(sensors)
+    sensors = scaler.transform(sensors)
+    with open('notebooks/transformers/scaler.pickle', 'wb') as f:
+        pickle.dump(scaler, f)
+    # Convert normalized data back to a DataFrame
+    sensors = pd.DataFrame(sensors, columns=sens_cols)
 
-        else:
-            dis_col.append(f)
-    num_col = num_col[1:] 
-    return df, num_col, dis_col
+    # Create one-hot encoded dummies for actuators
+    actuators_dummies = actuators.copy()
+    for actuator in actuators_NAMES:
+        actuators_dummies[actuator] = pd.Categorical(actuators_dummies[actuator], categories=[0, 1, 2])
+        actuators_dummies = pd.get_dummies(actuators_dummies, columns=[actuator], dtype=int)
+
+    # Ensure index consistency
+    sensors.index = actuators_dummies.index
+
+    # Concatenate sensors and actuators
+    allData = pd.concat([sensors, actuators_dummies], axis=1)
+
+    return allData , remained_cols
 
 
-
-
-
-def scale_and_encode(df, num_col, dis_col):
-    # Scaling numerical columns
-    if num_col:
-        scaler = StandardScaler()
-        df[num_col] = scaler.fit_transform(df[num_col])
-        with open('notebooks/transformers/scaler.pickle', 'wb') as f:
-            pickle.dump(scaler, f)
-    
-    # Encoding discrete columns
-    if dis_col:
-        encoder = OneHotEncoder(sparse=False, drop='first')
-        encoded_data = encoder.fit_transform(df[dis_col])
-        
-        # Check if .get_feature_names_out() is available
-        if hasattr(encoder, 'get_feature_names_out'):
-            encoded_columns = encoder.get_feature_names_out(dis_col)
-        else:
-            # For older versions of sklearn
-            encoded_columns = encoder.get_feature_names(dis_col)
-        
-        # Create a DataFrame for the encoded data with proper column names
-        encoded_df = pd.DataFrame(encoded_data, columns=encoded_columns, index=df.index)
-        
-        # Drop original discrete columns and join the new encoded columns
-        df = df.drop(dis_col, axis=1).join(encoded_df)
-        
-        # Save the encoder to a file
-        with open('notebooks/transformers/encoder.pickle', 'wb') as f:
-            pickle.dump(encoder, f)
-    
-    return df
-
-# Load data
-path = "Normal.csv"
-df = load_data(path)
-
-if df is not None:
-    df, num_col, dis_col = preprocessing(df)
-    
-    print(f"Numerical Columns: {num_col}")
-    print(f"Discrete Columns: {dis_col}")
-    
-    # Scale and encode the data
-    df = scale_and_encode(df, num_col, dis_col)
-    print("Data after scaling and encoding:")
-    print(df.head())
-    df.to_csv(f"./data/SWaT_train.csv", sep = ',', encoding = 'utf-8', index = False)
+path = 'Normal.csv'
+actuators_NAMES=['P101', 'P102', 'P201', 'P202', 'P204', 'P205', 'P206', 'MV301', 
+                           'MV303', 'MV304', 'P301', 'P401', 'P403', 'P404', 'P502', 'P601', 'P602', 'P603']
+allData , remained_cols= dataEngineering(path,actuators_NAMES)
+print(allData)
+allData.to_csv('data/SWaT_Train.csv')
