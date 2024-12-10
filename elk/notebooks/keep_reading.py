@@ -17,7 +17,7 @@ splits = [[np.random.rand(10, 69) for _ in range(10)] for _ in range(10)]  # Moc
 
 # Load ONNX model
 print("#" * 30)
-ort_session = ort.InferenceSession("./model.onnx")
+ort_session = ort.InferenceSession("work/model.onnx")
 
 # Get model input details
 input_details = ort_session.get_inputs()
