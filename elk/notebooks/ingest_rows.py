@@ -25,7 +25,7 @@ if TOPIC_NAME not in existing_topics:
     admin_client.create_topics(new_topics=topic_list, validate_only=False)
 
 # Read CSV into a pandas DataFrame
-df = pd.read_csv('./work/Attack.csv')  # Replace 'Attack.csv' with your actual CSV file path
+df = pd.read_csv('./work/Attack.csv').iloc[:,:-1]  # not sending the labels to the topic
 
 # Loop through each row of the CSV and send it row by row
 for index, row in df.iterrows():

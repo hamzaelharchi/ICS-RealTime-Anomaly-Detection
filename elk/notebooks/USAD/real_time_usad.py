@@ -39,8 +39,8 @@ decoder2_session = ort.InferenceSession("work/USAD/usad_decoder2.onnx")
 print('Models loaded')
 
 # Load the saved MinMaxScaler
-# scaler = joblib.load("work/USAD/minmax_scaler.pkl")
-# print("Scaler loaded")
+scaler = joblib.load("work/USAD/minmax_scaler.pkl")
+print("Scaler loaded")
 
 def reshape_input_data(global_buffer, window_size):
     """
@@ -65,8 +65,8 @@ def reshape_input_data(global_buffer, window_size):
     reshaped_input = df_last_window.values.flatten().reshape(1, -1)
 
     # Apply the scaler to normalize the data
-    # scaled_input = scaler.transform(reshaped_input)
-    scaled_input = reshaped_input # !!!! change when minmaxscaler loading is working
+    scaled_input = scaler.transform(reshaped_input)
+    # scaled_input = reshaped_input # !!!! change when minmaxscaler loading is working
 
     return scaled_input.astype(np.float32)
 
@@ -82,7 +82,7 @@ def process_batch(batch_df, batch_id):
         global_buffer.extend(new_rows)
 
         print(f'Global buffer contains {len(global_buffer)} rows')
-        print(global_buffer)
+        # print(global_buffer)
         # Always keep the last `window_size` rows from the buffer
         if len(global_buffer) > window_size:
             print('Keeping buffer size.')
