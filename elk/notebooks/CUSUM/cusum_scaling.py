@@ -57,10 +57,11 @@ def detect_anomaly(feature_name, data_point):
     Applies CUSUM on a single data point for real-time anomaly detection.
     """
     global positive_cusum, negative_cusum
-    # print(CUSUM_PARAMETERS)
+
+    # Ensure feature is in CUSUM_PARAMETERS
     if feature_name not in CUSUM_PARAMETERS:
         print(f"No CUSUM parameters found for feature: {feature_name}")
-        return 0, 0  # No anomaly, no CUSUM
+        return 0, (0, 0)  # No anomaly, no CUSUM
 
     reference_value, drift_threshold, decision_threshold = CUSUM_PARAMETERS[feature_name]
 
@@ -70,21 +71,28 @@ def detect_anomaly(feature_name, data_point):
         negative_cusum[feature_name] = 0
 
     # Calculate the positive and negative CUSUM
-    positive_cusum[feature_name] = max(0, positive_cusum[feature_name] + data_point - (reference_value + drift_threshold))
-    negative_cusum[feature_name] = min(0, negative_cusum[feature_name] + data_point - (reference_value - drift_threshold))
+    delta = data_point - reference_value
+    positive_cusum[feature_name] = max(0, positive_cusum[feature_name] + delta - drift_threshold)
+    negative_cusum[feature_name] = min(0, negative_cusum[feature_name] + delta + drift_threshold)
 
     # Detect anomaly
+    anomaly = 0
     if positive_cusum[feature_name] > decision_threshold or abs(negative_cusum[feature_name]) > decision_threshold:
-        # Reset CUSUM after detecting an anomaly
-        positive_cusum[feature_name] = 0
-        negative_cusum[feature_name] = 0 
-        return 1, (positive_cusum[feature_name], negative_cusum[feature_name])  # Anomaly detected
-    return 0, (positive_cusum[feature_name], negative_cusum[feature_name])  # No anomaly
+        anomaly = 1  # Anomaly detected
+
+    # Return anomaly status and updated CUSUM values
+    return anomaly, (positive_cusum[feature_name], negative_cusum[feature_name])
+
 
 def preprocess_data(pandas_df):
     # Define columns for preprocessing
     timestamp_col = "Timestamp"  # The first column is the timestamp
-    categorical_columns = ['P601', 'P602', 'P603']  # Update with actual categorical columns
+    categorical_columns = ['MV101', 'P101', 'P102', 'MV201', 'P201',
+                       'P202',	'P203',	'P204',	'P205', 'P206',	'MV301',
+                       'MV302', 'MV303', 'MV304', 'P301', 'P302', 
+                       'P401',	'P402',	'P403',	'P404',	'UV401', 'P501',
+                       'P502', 'P601', 'P602', 'P603']
+
     numerical_columns = [col for col in pandas_df.columns if col not in categorical_columns + [timestamp_col]]
 
     # Extract timestamp column
