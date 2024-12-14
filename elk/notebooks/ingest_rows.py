@@ -26,6 +26,7 @@ if TOPIC_NAME not in existing_topics:
 
 # Read CSV into a pandas DataFrame
 df = pd.read_csv('./work/Attack.csv').iloc[:,:-1]  # not sending the labels to the topic
+# df = pd.read_csv('./work/Normal.csv').iloc[:,:-1]  # not sending the labels to the topic
 
 # Loop through each row of the CSV and send it row by row
 for index, row in df.iterrows():
@@ -38,7 +39,7 @@ for index, row in df.iterrows():
     print(f"Sent row key: {key}, row value: {value}")
 
     # Optional: Wait before sending the next row
-    time.sleep(5)  # Adjust sleep time as needed
+    time.sleep(0.5)  # Adjust sleep time as needed
 
 # Close the producer after sending all messages
 producer.close()
