@@ -40,7 +40,9 @@ print('Models loaded')
 # Load the saved MinMaxScaler and encoder
 encoder = joblib.load("work/Preprocessing/onehot_encoder.pkl")  # Replace with your encoder file path
 scaler = joblib.load("work/Preprocessing/minmax_scaler.pkl")
+pca = joblib.load("work/Preprocessing/pca_model_attack.pkl")
 print("Scaler and Encoder loaded")
+
 
 # Categorical columns for preprocessing
 categorical_columns = ['MV101', 'P101', 'P102', 'MV201', 'P201',
@@ -48,6 +50,7 @@ categorical_columns = ['MV101', 'P101', 'P102', 'MV201', 'P201',
                        'MV302', 'MV303', 'MV304', 'P301', 'P302', 
                        'P401', 'P402', 'P403', 'P404', 'UV401', 'P501',
                        'P502', 'P601', 'P602', 'P603']
+
 
 def preprocess_data(row):
     """
@@ -79,30 +82,16 @@ def preprocess_data(row):
             axis=1
         )
 
+        # print(processed_data) 
+
+        # Apply PCA transformation to the processed data
+        processed_data = pca.transform(processed_data)
+        processed_data = pd.DataFrame(processed_data)
+
+        # print(processed_data)
+
+
         return processed_data.values.flatten().tolist()
-    except Exception as e:
-        print(f"Error preprocessing row: {e}")
-        return None
-
-def oldpreprocess_data(row):
-    """
-    Preprocess a single incoming data row.
-    - Parse the row into a dictionary.
-    - Separate numerical and categorical features.
-    - Apply scaling to numerical features only.
-    """
-    try:
-        # Convert the row to a DataFrame
-        row_df = pd.DataFrame([row])
-
-        # Filter out columns not seen during scaler fitting
-        numerical_columns = [col for col in row_df.columns if col not in categorical_columns and col != "Timestamp"]
-        numerical_data = row_df[numerical_columns]
-
-        # Apply scaling to numerical features
-        scaled_numerical_data = scaler.transform(numerical_data)
-
-        return scaled_numerical_data.flatten().tolist()
     except Exception as e:
         print(f"Error preprocessing row: {e}")
         return None

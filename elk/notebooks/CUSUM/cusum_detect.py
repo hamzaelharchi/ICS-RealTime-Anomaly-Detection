@@ -6,6 +6,18 @@ from pyspark.sql.session import SparkSession
 from kafka import KafkaProducer
 import joblib
 
+
+dict_stages = {
+    'P1': ['LIT101', 'P101'],
+    'P2': ['FIT201', 'AIT201', 'P201', 'P203', 'P205'],
+    'P3': ['AIT202', 'AIT203', 'LIT301', 'DPIT301', 'P301'],
+    'P4': ['LIT401', 'P401', 'FIT401', 'AIT402'],
+    'P5': ['AIT503', 'P501', 'AIT504'],
+    'P6': ['P602']
+}
+
+
+
 # Initialize Spark
 sc = SparkContext('local')
 spark = SparkSession(sc)
