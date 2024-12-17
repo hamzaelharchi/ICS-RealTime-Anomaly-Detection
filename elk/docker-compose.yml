@@ -116,7 +116,7 @@ services:
     depends_on:
       - influxdb
     # links:
-    #   - influxdb
+    #   - influxdbd
     ports:
     - '8125:8125'
     networks:
