@@ -166,7 +166,7 @@ def dataEngineering(normal_data,actuators_NAMES):
  
  # Global buffer to store rows
 BUFFER = []
-BUFFER_SIZE = 10
+BUFFER_SIZE = 300
 
 # Load the ONNX model
 import onnxruntime as ort
@@ -195,7 +195,7 @@ def process_and_send_to_kafka(batch_df, batch_id):
         for _, row in preprocessed_data.iterrows():
             BUFFER.append(row.values)  # Append row as a NumPy array
             
-            # Check if the buffer has 10 rows
+            # Check if the buffer has 300 rows
             if len(BUFFER) == BUFFER_SIZE:
                 # Convert buffer to NumPy array and reshape for the model
                 batch_data = np.array(BUFFER, dtype=np.float32).reshape(1, BUFFER_SIZE, -1)
