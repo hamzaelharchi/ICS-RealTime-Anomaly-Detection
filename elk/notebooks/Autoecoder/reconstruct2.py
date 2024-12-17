@@ -171,7 +171,7 @@ BUFFER_SIZE = 300
 # Load the ONNX model
 import onnxruntime as ort
 
-model_path = "work/Autoecoder/model.onnx"
+model_path = "work/Autoecoder/BWmodel.onnx"
 onnx_session = ort.InferenceSession(model_path)
 
 # Input and output names for the ONNX model
