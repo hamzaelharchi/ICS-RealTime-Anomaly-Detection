@@ -1,0 +1,108 @@
+import pandas as pd 
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import LocalOutlierFactor  
+from sklearn.model_selection import KFold
+
+import pickle
+import os
+
+# Data Engineering Function
+def dataEngineering(filepath, actuators_NAMES):
+    normal_data = pd.read_csv(filepath)
+    normal_data.set_index('Timestamp', inplace=True)
+
+    if 'Normal/Attack' in normal_data.columns:
+        normal_attack = normal_data['Normal/Attack']
+    else:
+        normal_attack = None
+        print("Warning: 'Normal/Attack' column not found.")
+
+    normal_data = normal_data.iloc[:, :-1]
+
+    to_drop = ['P402', 'P203', 'FIT501', 'FIT504', 'P501', 'FIT502', 'AIT502', 
+               'FIT201', 'MV101', 'PIT501', 'PIT503', 'AIT504', 'MV201', 'MV302',
+               'FIT503', 'P302', 'FIT301', 'UV401']
+
+    remained_cols = [i for i in normal_data.columns if i not in to_drop]
+
+    normal_data.drop(columns=to_drop, inplace=True)
+
+    actuators_NAMES = [col for col in actuators_NAMES if col in normal_data.columns]
+
+    sensors = normal_data.drop(columns=actuators_NAMES)
+
+    sens_cols = sensors.columns
+    print(sens_cols)
+    actuators = normal_data[actuators_NAMES]
+
+    scaler = MinMaxScaler()
+    scaler.fit(sensors)
+    sensors = scaler.transform(sensors)
+
+    sensors = pd.DataFrame(sensors, columns=sens_cols)
+
+    actuators_dummies = actuators.copy()
+    for actuator in actuators_NAMES:
+        actuators_dummies[actuator] = pd.Categorical(actuators_dummies[actuator], categories=[0, 1, 2])
+        actuators_dummies = pd.get_dummies(actuators_dummies, columns=[actuator], dtype=int)
+
+    sensors.index = actuators_dummies.index
+    allData = pd.concat([sensors, actuators_dummies], axis=1)
+
+    if normal_attack is not None:
+        allData['Normal/Attack'] = normal_attack
+
+    return allData, remained_cols
+
+
+filepath = '/content/drive/MyDrive/swat/SWat_merged.csv'
+actuators_NAMES = ['P101', 'P102', 'P201', 'P202', 'P204', 'P205', 'P206', 
+                   'MV301', 'MV303', 'MV304', 'P301', 'P401', 'P403', 'P404', 
+                   'P502', 'P601', 'P602', 'P603']
+
+allData, remained_cols = dataEngineering(filepath, actuators_NAMES)
+
+y_sampled = allData['Normal/Attack']
+X_sampled = allData.drop(columns=['Normal/Attack'], errors='ignore')
+
+print(f"Number of input samples (rows): {X_sampled.shape[0]}")
+print(f"Number of input features (columns): {X_sampled.shape[1]}")
+
+X_train_s, X_test_s, y_train_s, y_test_s = train_test_split(X_sampled, y_sampled, test_size=0.2, random_state=42)
+
+kfold = KFold(n_splits=50, shuffle=True, random_state=42)
+lof_model = LocalOutlierFactor(n_neighbors=20, contamination=0.01, novelty=True, n_jobs=-1)
+
+cv_scores = []
+for train_index, val_index in kfold.split(X_train_s):
+    X_train_fold, X_val_fold = X_train_s.iloc[train_index], X_train_s.iloc[val_index]
+
+    lof_model.fit(X_train_fold)
+
+    y_pred_fold = lof_model.predict(X_val_fold)
+    num_inliers = (y_pred_fold == 1).sum()
+    cv_score = num_inliers / len(y_pred_fold)  
+    cv_scores.append(cv_score)
+
+print(f"Cross-validation scores: {cv_scores}")
+print(f"Mean CV score: {sum(cv_scores)/len(cv_scores):.4f}")
+
+lof_model.fit(X_train_s)
+
+
+folder_path = "/content/drive/MyDrive/swat"
+file_path = os.path.join(folder_path, "lof_model.pickle")
+
+with open(file_path, 'wb') as f:
+    pickle.dump(lof_model, f)
+
+print(f"Model saved to: {file_path}")
+
+y_pred = lof_model.predict(X_test_s)
+
+output_path = os.path.join(folder_path, "lof_predictions.csv")
+predictions_df = pd.DataFrame(y_pred, columns=['Prediction'], index=X_test_s.index)
+predictions_df.to_csv(output_path)
+
+print(f"Shape of predictions DataFrame: {predictions_df.shape}")
