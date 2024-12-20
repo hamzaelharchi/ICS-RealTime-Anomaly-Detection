@@ -14,7 +14,7 @@ from pyspark.sql.functions import to_json, struct
 from pyspark.sql.window import Window
 from pyspark.sql.functions import col, lit,row_number
 from pyspark.context import SparkContext
- 
+from datetime import datetime
  
  
 # Initialize Spark
@@ -22,16 +22,20 @@ sc = SparkContext('local')
 spark = SparkSession(sc)
 spark.sparkContext.setLogLevel("ERROR")
  
- 
-# Initialize Spark
- 
-#spark = SparkSession.builder.master("local[*]").appName("Stream").getOrCreate()
+  
+
+
+
+  # Define the format of the original timestamp
+original_format = '%d/%m/%Y %I:%M:%S %p'
+
+
+
  
 # Kafka topic and bootstrap servers
 TOPIC_NAME = 'swat'
 BOOTSTRAP_SERVERS = "kafka:29092"
-OUTPUT_TOPIC_NAME = 'reconstructed-ae'
-OUTPUT_TOPIC_NAME_ONLY_ANOMALIES = 'anomalies-topic'
+OUTPUT_TOPIC_NAME = 'reconstructed-ae2' 
 
 
 producer = KafkaProducer(
@@ -118,41 +122,42 @@ schema_mapping = {"Timestamp": "string", "FIT101": "double", "LIT101": "double",
  
 for col_name, col_type in schema_mapping.items():
     inputStream = inputStream.withColumn(col_name, inputStream[col_name].cast(col_type))
- 
+
 # Load the scaler object
 scaler = joblib.load('work/Autoecoder/transformers/scaler.pickle')
 # Actuator names for dummy encoding
 actuators_NAMES = ['P101', 'P102', 'P201', 'P202', 'P204', 'P205', 'P206', 'MV301',
                    'MV303', 'MV304', 'P301', 'P401', 'P403', 'P404', 'P502', 'P601', 'P602', 'P603']
- 
-def dataEngineering(normal_data,actuators_NAMES):
- 
-    normal_data.set_index('Timestamp', inplace=True)
- 
-    # Remove the last column
+
+
+def dataEngineering(normal_data, actuators_NAMES):
+    # Keep a copy of the Timestamp column
+    timestamps = normal_data['Timestamp']
+    
+    # Drop the Timestamp column temporarily for preprocessing
+    normal_data = normal_data.drop(columns=['Timestamp'])
+    
+    # Remove the last column (assumed to be the 'Normal/Attack' column)
     normal_data = normal_data.iloc[:, :-1]
- 
-    to_drop = ['P402' ,'P203','FIT501','FIT504','P501' ,'FIT502','AIT502' ,'FIT201' ,'MV101','PIT501','PIT503' ,'AIT504' ,'MV201' ,'MV302' ,'FIT503','P302' ,'FIT301' ,'UV401']
- 
-           
-    remained_cols= [i for i in normal_data.columns if i not in to_drop]
- 
-    # Drop highly correlated features
+    
+    to_drop = ['P402', 'P203', 'FIT501', 'FIT504', 'P501', 'FIT502', 'AIT502',
+               'FIT201', 'MV101', 'PIT501', 'PIT503', 'AIT504', 'MV201',
+               'MV302', 'FIT503', 'P302', 'FIT301', 'UV401']
+    
+    # Drop unwanted columns
     normal_data.drop(columns=to_drop, inplace=True)
- 
-    # Filter actuator names that are still in the dataset
+    
+    # Filter actuator names still in the dataset
     actuators_NAMES = [col for col in actuators_NAMES if col in normal_data.columns]
- 
+    
     # Separate sensors and actuators
     sensors = normal_data.drop(columns=actuators_NAMES)
     sens_cols = sensors.columns
-    print(len(sens_cols))
+    
     actuators = normal_data[actuators_NAMES]
-   
- 
+    
+    # Scale the sensor data
     sensors = scaler.transform(sensors)
- 
-    # Convert normalized data back to a DataFrame
     sensors = pd.DataFrame(sensors, columns=sens_cols)
     actuators_dummies = actuators.copy()
     for actuator in actuators_NAMES:
@@ -160,14 +165,20 @@ def dataEngineering(normal_data,actuators_NAMES):
         actuators_dummies = pd.get_dummies(actuators_dummies, columns=[actuator], dtype=int)
     # Ensure index consistency
     sensors.index = actuators_dummies.index
+    
     # Concatenate sensors and actuators
-    allData = pd.concat([sensors,actuators_dummies],axis=1)
-    return allData
+    allData = pd.concat([sensors, actuators_dummies], axis=1)
+    
+    # Add the Timestamp back
+  #  allData['Timestamp'] = timestamps.values
+    timesteps = timestamps
+    
+    return timesteps, allData
  
  # Global buffer to store rows
 BUFFER = []
-BUFFER_SIZE = 300
-
+BUFFER_SIZE =300
+timestamps_buffer = []  # Store the corresponding timestamps
 # Load the ONNX model
 import onnxruntime as ort
 
@@ -181,7 +192,8 @@ output_name = onnx_session.get_outputs()[0].name
 # Function to process each batch and send to Kafka
 def process_and_send_to_kafka(batch_df, batch_id):
     global BUFFER  # Access the global buffer
-
+    global timestamps_buffer
+    
     if not batch_df.isEmpty():  # Check if the batch is not empty
         print(f"Processing batch {batch_id} with {batch_df.count()} records.")
         
@@ -189,77 +201,101 @@ def process_and_send_to_kafka(batch_df, batch_id):
         pandas_df = batch_df.toPandas()
         
         # Apply data engineering pipeline
-        preprocessed_data = dataEngineering(pandas_df, actuators_NAMES)
-
+        timesteps, preprocessed_data = dataEngineering(pandas_df, actuators_NAMES)
         # Accumulate rows in the buffer
-        for _, row in preprocessed_data.iterrows():
-            BUFFER.append(row.values)  # Append row as a NumPy array
+        print(len(timesteps))
+        print(len(preprocessed_data))
+        # Accumulate rows and timestamps
+        for (_, row), timestamp in zip(preprocessed_data.iterrows() ,timesteps) :
+            BUFFER.append(row)  # Append preprocessed row
+            timestamps_buffer.append(timestamp)  # Append corresponding timestamp
+
             
-            # Check if the buffer has 300 rows
+            # Check if the buffer has 10 rows
             if len(BUFFER) == BUFFER_SIZE:
                 # Convert buffer to NumPy array and reshape for the model
                 batch_data = np.array(BUFFER, dtype=np.float32).reshape(1, BUFFER_SIZE, -1)
                 
-                print(f"Buffer full. Processing {BUFFER_SIZE} rows...")
+                print(f"Buffer full. Length of timestamps_buffer: {len(timestamps_buffer)}")
+ 
                 
+                print(f"Buffer full. Processing {BUFFER_SIZE} rows...")
+
                 # Run the ONNX model
                 try:
                     reconstructed = onnx_session.run([output_name], {input_name: batch_data})
-                    
+                    print(f"Shape of ONNX model output: {reconstructed[0].shape}")
                     # Squeeze the output to remove singleton dimensions
+                    # Explicitly reshape the flattened output 
+                    num_rows = BUFFER_SIZE  # 10 rows
+                    num_features = reconstructed[0].size // num_rows  # Calculate features per row
+                
                     reconstructed_squeezed = np.squeeze(reconstructed[0])
-                    
-                    # Convert reconstructed output back to a DataFrame for Kafka
+                    print(f"Reshaped ONNX model output: {reconstructed_squeezed.shape}")
+                    # Convert reconstructed output back to a DataFrame
                     reconstructed_df = pd.DataFrame(reconstructed_squeezed, columns=preprocessed_data.columns)
-                    
-                    # # Send reconstructed data to Kafka
-                    # for _, reconstructed_row in reconstructed_df.iterrows():
-                    #     producer.send(
-                    #         OUTPUT_TOPIC_NAME,
-                    #         value=json.dumps(reconstructed_row.to_dict())
-                    #     )
-                    
-                    # print("Reconstructed data sent to Kafka.")
-                    # Updated Kafka producer logic to send all features
-                    for original_row, reconstructed_row in zip(preprocessed_data.iterrows(), reconstructed_df.iterrows()):
-                        # Convert rows to dictionaries
-                        original_dict = original_row[1].to_dict()
-                        reconstructed_dict = reconstructed_row[1].to_dict()
+                    print(f"Number of rows in preprocessed_data: {len(preprocessed_data)}")
+                    print(f"Number of rows in reconstructed_df: {len(reconstructed_df)}")
+                    print(f"Number of elements in timesteps: {len(timestamps_buffer)}")
+                    columns = preprocessed_data.columns
+
+                    for original_row, (idx, reconstructed_row), time in zip(BUFFER, reconstructed_df.iterrows(), timestamps_buffer):
+                        # Cast original_row to float32 if needed
+                        original_row = original_row.astype(np.float32)  # Cast to float32
                         
-                        # Initialize the combined dictionary with the timestamp
+                        # Convert NumPy array (original_row) to a dictionary
+                        original_dict = {col: float(val) for col, val in zip(columns, original_row)}
+                        
+                        # Convert reconstructed_row (DataFrame row) to dictionary
+                        reconstructed_dict = reconstructed_row.to_dict()
+                        
+                        # Debugging prints
+                        print("Original Row (Dictionary):", original_dict)
+                        print("Reconstructed Row (Dictionary):", reconstructed_dict)
+                        print("Timestamp:", time)
+
+                        # Combine the original timestamp with the reconstruction results
                         # combined_dict = {
-                        #     "Timestamp": original_dict["Timestamp"]  # Ensure timestamp is passed
+                        #     "Timestamp": reconstructed_dict["Timestamp"]  # Attach Timestamp
                         # }
                         combined_dict={}
-                        reconstruction_errors=[]
-                        # Add all features dynamically
+                        reconstruction_errors = []
                         for feature in original_dict.keys():
-                            if feature != "Timestamp":  # Skip the Timestamp key
+                            if feature != "Timestamp":
                                 original_value = original_dict[feature]
                                 reconstructed_value = reconstructed_dict[feature]
-                                combined_dict[f"{feature}_original"] = original_dict[feature]
-                                combined_dict[f"{feature}_reconstructed"] = reconstructed_dict[feature]
+                                combined_dict[f"{feature}_original"] = original_value
+                                combined_dict[f"{feature}_reconstructed"] = reconstructed_value
                                 reconstruction_errors.append(original_value - reconstructed_value)
-                            reconstruction_error = np.mean(np.abs(reconstruction_errors))
-                            combined_dict["anomalyFlagged"] = 1 if reconstruction_error > 0.11 else 0
-                        # Send combined data to Kafka
+                        
+                        reconstruction_error = np.mean(np.abs(reconstruction_errors))
+                        combined_dict["anomalyFlagged"] = 1 if reconstruction_error > 0.11 else 0 
+                        combined_dict["recosntruction_error"] = reconstruction_error
+                        # Parse the original timestamp string to a datetime object
+                        # Remove leading and trailing whitespace
+                        time = time.strip()
+                        timestamp_obj = datetime.strptime(time, original_format)
+
+                        # Convert the datetime object to ISO 8601 format (UTC)
+
+                        iso_format = timestamp_obj.strftime('%Y-%m-%dT%H:%M:%SZ')
+                        combined_dict["timestamp"] = iso_format
+                        #Send to Kafka
+                        print(combined_dict)
                         producer.send(
                             OUTPUT_TOPIC_NAME, 
-                            value=json.dumps(combined_dict)  # Convert to JSON string
+                            value=json.dumps(combined_dict)
                         )
-                        print("Reconstructed data sent to Kafka.")
+                        print("a Reconstructed datapt sent to Kafka.")
 
-                        # If the data point is anomalous, send only the original data point to the anomalies topic
-                        if combined_dict["anomalyFlagged"] == 1: 
-                            producer.send(
-                                OUTPUT_TOPIC_NAME_ONLY_ANOMALIES,
-                                value=json.dumps(original_dict)
-                            )
+
                 except Exception as e:
                     print(f"Error during ONNX model inference: {e}")
+                finally:
+                    BUFFER = []
+                    timestamps_buffer = []
+
                 
-                # Clear the buffer
-                BUFFER = []
 
 # Process the streaming data
 query = inputStream.writeStream \

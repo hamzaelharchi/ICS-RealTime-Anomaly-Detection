@@ -23,3 +23,10 @@ kmeans = KMeans(n_clusters = 4).fit(np.asarray(X))
 # Save model: It is important to use binary access
 with open('./models/kmeans.pickle', 'wb') as f:
     pickle.dump(kmeans, f)
+
+
+
+
+
+
+ 

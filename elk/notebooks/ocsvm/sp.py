@@ -168,7 +168,7 @@ def dataEngineering(normal_data,actuators_NAMES):
  
  
  
- 
+
 svm =  joblib.load('work/models/ocsvm.pickle')
  
 # Function to process each batch and send to Kafka
